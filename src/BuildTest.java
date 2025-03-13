@@ -1,3 +1,8 @@
+import org.junit.Test;
+import static org.junit.Assert.*;
+
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -5,6 +10,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.List;
 
 public class BuildTest {
 
@@ -114,7 +120,6 @@ public class BuildTest {
 
   /**
    * Builds the complex graph as follows:
-   * https://auberonedu.github.io/graph-explore/graph_site/viz.html
    *
    *   v3.neighbors  = { v7, v34 }
    *   v7.neighbors  = { v12, v45, v34, v56 }
@@ -171,12 +176,11 @@ public class BuildTest {
     return graph;
   }
 
-
   // ====================================================
   // TeeOutputStream inner class for capturing output
   // ====================================================
   // Used for testing purposes so you can still see your print statements when debugging.
-  // You do not need to modify this.
+  // (Not modified)
   static class TeeOutputStream extends OutputStream {
     private final OutputStream first;
     private final OutputStream second;
@@ -215,5 +219,274 @@ public class BuildTest {
         throw new RuntimeException("Error closing TeeOutputStream", e);
       }
     }
+  }
+
+  // ------------------------------------------------
+  // Utility to capture System.out output for testing.
+  // ------------------------------------------------
+  private String captureOutput(Runnable runnable) {
+    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    PrintStream originalOut = System.out;
+    PrintStream ps = new PrintStream(baos);
+    System.setOut(ps);
+    try {
+      runnable.run();
+    } finally {
+      System.out.flush();
+      System.setOut(originalOut);
+    }
+    return baos.toString().trim();
+  }
+
+  // ====================================================
+  // Tests for printShortWords(Vertex<String>, int)
+  // ====================================================
+
+  @Test
+  public void testPrintShortWords_NullVertex() {
+    // If vertex is null, nothing should be printed.
+    String output = captureOutput(() -> Build.printShortWords(null, 5));
+    assertEquals("", output);
+  }
+
+  @Test
+  public void testPrintShortWords_SingleVertexMatch() {
+    // A single vertex "cat" (3 letters) with k=4 should print "cat".
+    Vertex<String> vertex = new Vertex<>("cat");
+    String output = captureOutput(() -> Build.printShortWords(vertex, 4));
+    assertEquals("cat", output);
+  }
+
+  @Test
+  public void testPrintShortWords_MultipleMatches() {
+    // Graph:
+    //    "hello" (5 letters) with neighbors: "dog" (3), "ant" (3), "elephant" (8), "bee" (3)
+    // k = 5 means words strictly less than 5 letters are printed.
+    Vertex<String> hello = new Vertex<>("hello");
+    Vertex<String> dog = new Vertex<>("dog");
+    Vertex<String> ant = new Vertex<>("ant");
+    Vertex<String> elephant = new Vertex<>("elephant");
+    Vertex<String> bee = new Vertex<>("bee");
+    hello.neighbors = new ArrayList<>(Arrays.asList(dog, ant, elephant, bee));
+
+    String output = captureOutput(() -> Build.printShortWords(hello, 5));
+    // Expected: "dog", "ant", "bee" (order is not guaranteed).
+    Set<String> expected = new HashSet<>(Arrays.asList("dog", "ant", "bee"));
+    Set<String> actual = new HashSet<>(Arrays.asList(output.split("\\s+")));
+    assertEquals(expected, actual);
+  }
+
+  @Test
+  public void testPrintShortWords_CyclicGraph() {
+    // Build a cyclic graph with a self-loop:
+    //    "a" -> "bb" -> "ccc" -> "a"
+    //    and "bb" also has a self-loop.
+    // k = 3 should print vertices with words shorter than 3: "a" (1) and "bb" (2)
+    Vertex<String> a = new Vertex<>("a");
+    Vertex<String> bb = new Vertex<>("bb");
+    Vertex<String> ccc = new Vertex<>("ccc");
+    a.neighbors = new ArrayList<>(Arrays.asList(bb));
+    bb.neighbors = new ArrayList<>(Arrays.asList(ccc, bb)); // self-loop on bb
+    ccc.neighbors = new ArrayList<>(Arrays.asList(a));
+
+    String output = captureOutput(() -> Build.printShortWords(a, 3));
+    Set<String> expected = new HashSet<>(Arrays.asList("a", "bb"));
+    Set<String> actual = new HashSet<>(Arrays.asList(output.split("\\s+")));
+    assertEquals(expected, actual);
+  }
+
+  // ====================================================
+  // Tests for longestWord(Vertex<String>)
+  // ====================================================
+
+  @Test
+  public void testLongestWord_Null() {
+    // A null vertex should yield an empty string.
+    assertEquals("", Build.longestWord(null));
+  }
+
+  @Test
+  public void testLongestWord_SingleVertex() {
+    Vertex<String> vertex = new Vertex<>("simple");
+    assertEquals("simple", Build.longestWord(vertex));
+  }
+
+  @Test
+  public void testLongestWord_MultipleVertices() {
+    // Graph:
+    //   "cat" -> "elephant", "dog"
+    // Expect longest word "elephant"
+    Vertex<String> cat = new Vertex<>("cat");
+    Vertex<String> elephant = new Vertex<>("elephant");
+    Vertex<String> dog = new Vertex<>("dog");
+    cat.neighbors = new ArrayList<>(Arrays.asList(elephant, dog));
+    assertEquals("elephant", Build.longestWord(cat));
+  }
+
+  @Test
+  public void testLongestWord_CyclicGraph() {
+    // Graph with cycle:
+    //    "one" -> "two" -> "three" -> "one"
+    // Expect longest word "three"
+    Vertex<String> one = new Vertex<>("one");
+    Vertex<String> two = new Vertex<>("two");
+    Vertex<String> three = new Vertex<>("three");
+    one.neighbors = new ArrayList<>(Arrays.asList(two));
+    two.neighbors = new ArrayList<>(Arrays.asList(three));
+    three.neighbors = new ArrayList<>(Arrays.asList(one));
+    assertEquals("three", Build.longestWord(one));
+  }
+
+  // ====================================================
+  // Tests for printSelfLoopers(Vertex<T>)
+  // ====================================================
+
+  @Test
+  public void testPrintSelfLoopers_Null() {
+    String output = captureOutput(() -> Build.printSelfLoopers(null));
+    assertEquals("", output);
+  }
+
+  @Test
+  public void testPrintSelfLoopers_NoLoopers() {
+    // Graph with no vertex that has itself as a neighbor.
+    Vertex<String> a = new Vertex<>("a");
+    Vertex<String> b = new Vertex<>("b");
+    a.neighbors = new ArrayList<>(Arrays.asList(b));
+    b.neighbors = new ArrayList<>();
+    String output = captureOutput(() -> Build.printSelfLoopers(a));
+    assertEquals("", output);
+  }
+
+  @Test
+  public void testPrintSelfLoopers_OneLooper() {
+    // Single vertex with a self-loop.
+    Vertex<String> self = new Vertex<>("self");
+    self.neighbors = new ArrayList<>(Arrays.asList(self));
+    String output = captureOutput(() -> Build.printSelfLoopers(self));
+    assertEquals("self", output.trim());
+  }
+
+  @Test
+  public void testPrintSelfLoopers_MultipleLoopers() {
+    // Graph: A -> B, A -> C; B -> B (self-loop), C -> C (self-loop)
+    Vertex<String> A = new Vertex<>("A");
+    Vertex<String> B = new Vertex<>("B");
+    Vertex<String> C = new Vertex<>("C");
+    A.neighbors = new ArrayList<>(Arrays.asList(B, C));
+    B.neighbors = new ArrayList<>(Arrays.asList(B));
+    C.neighbors = new ArrayList<>(Arrays.asList(C));
+    String output = captureOutput(() -> Build.printSelfLoopers(A));
+    Set<String> expected = new HashSet<>(Arrays.asList("B", "C"));
+    Set<String> actual = new HashSet<>(Arrays.asList(output.split("\\s+")));
+    assertEquals(expected, actual);
+  }
+
+  // ====================================================
+  // Tests for canReach(Airport, Airport)
+  // ====================================================
+
+  @Test
+  public void testCanReach_SameAirport() {
+    AirportData data = buildAirportData();
+    // Starting and destination are the same.
+    assertTrue(Build.canReach(data.atl, data.atl));
+  }
+
+  @Test
+  public void testCanReach_DirectFlight() {
+    AirportData data = buildAirportData();
+    // ATL -> JFK is a direct flight.
+    assertTrue(Build.canReach(data.atl, data.jfk));
+  }
+
+  @Test
+  public void testCanReach_MultipleHops() {
+    AirportData data = buildAirportData();
+    // ATL -> JFK -> DEN should be reachable.
+    assertTrue(Build.canReach(data.atl, data.den));
+  }
+
+  @Test
+  public void testCanReach_Unreachable() {
+    AirportData data = buildAirportData();
+    // From DFW, only LAS is reachable; ATL should be unreachable.
+    assertFalse(Build.canReach(data.dfw, data.atl));
+  }
+
+  @Test
+  public void testCanReach_Cyclic() {
+    AirportData data = buildAirportData();
+    // PHX -> SEA -> DEN -> MIA -> SEA forms a cycle.
+    // PHX should be able to reach DEN.
+    assertTrue(Build.canReach(data.phx, data.den));
+  }
+
+  // ====================================================
+  // Tests for unreachable(Map<T, List<T>>, T)
+  // ====================================================
+
+  @Test
+  public void testUnreachable_StartingFrom3() {
+    // Using the complex map.
+    Map<Integer, Set<Integer>> graph = buildComplexMap();
+    // Convert to Map<Integer, List<Integer>>
+    Map<Integer, List<Integer>> graphList = new HashMap<>();
+    for (Map.Entry<Integer, Set<Integer>> entry : graph.entrySet()) {
+      graphList.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+    }
+    // From 3, reachable should be: {3, 7, 34, 12, 45, 56, 78, 91, 23}
+    // Unreachable: {67}
+    Set<Integer> unreachable = Build.unreachable(graphList, 3);
+    Set<Integer> expected = new HashSet<>(Arrays.asList(67));
+    assertEquals(expected, unreachable);
+  }
+
+  @Test
+  public void testUnreachable_StartingFrom67() {
+    Map<Integer, Set<Integer>> graph = buildComplexMap();
+    Map<Integer, List<Integer>> graphList = new HashMap<>();
+    for (Map.Entry<Integer, Set<Integer>> entry : graph.entrySet()) {
+      graphList.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+    }
+    // From 67, reachable: {67, 91, 56, 78}; unreachable: {3, 7, 12, 34, 45, 23}
+    Set<Integer> unreachable = Build.unreachable(graphList, 67);
+    Set<Integer> expected = new HashSet<>(Arrays.asList(3, 7, 12, 34, 45, 23));
+    assertEquals(expected, unreachable);
+  }
+
+  @Test
+  public void testUnreachable_SingleNodeGraph() {
+    // Graph with one node mapping to an empty list.
+    Map<Integer, List<Integer>> graph = new HashMap<>();
+    graph.put(1, new ArrayList<>());
+    // From 1, only 1 is reachable.
+    Set<Integer> unreachable = Build.unreachable(graph, 1);
+    assertTrue(unreachable.isEmpty());
+  }
+
+  @Test
+  public void testUnreachable_CycleGraph() {
+    // Graph with a cycle: A -> B, B -> C, C -> A.
+    Map<String, List<String>> graph = new HashMap<>();
+    graph.put("A", new ArrayList<>(Arrays.asList("B")));
+    graph.put("B", new ArrayList<>(Arrays.asList("C")));
+    graph.put("C", new ArrayList<>(Arrays.asList("A")));
+    // From "A", every node is reachable.
+    Set<String> unreachable = Build.unreachable(graph, "A");
+    assertTrue(unreachable.isEmpty());
+  }
+
+  @Test
+  public void testUnreachable_StartingNotInGraph() {
+    // Graph with nodes but the starting node is not a key.
+    Map<String, List<String>> graph = new HashMap<>();
+    graph.put("A", new ArrayList<>(Arrays.asList("B")));
+    graph.put("B", new ArrayList<>());
+    graph.put("C", new ArrayList<>());
+    // Starting from "D" (not in graph), expect all nodes to be unreachable.
+    Set<String> unreachable = Build.unreachable(graph, "D");
+    Set<String> expected = new HashSet<>(Arrays.asList("A", "B", "C"));
+    assertEquals(expected, unreachable);
   }
 }
