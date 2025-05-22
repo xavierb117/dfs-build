@@ -295,6 +295,36 @@ public class BuildTest {
     assertEquals(expected, actual);
   }
 
+   @Test
+  public void testPrintShortWords_ComplexGraph() {
+    // Build a complex string graph with forks and a cycle:
+    //   "ab" -> "cde", "f", "ghij"
+    //   "cde" -> "klmno", "f"
+    //   "f"   -> "pqr"
+    //   "ghij"-> "cde", "st"
+    //   "st"  -> "ab" (cycle back to root)
+    Vertex<String> ab     = new Vertex<>("ab");
+    Vertex<String> cde    = new Vertex<>("cde");
+    Vertex<String> f      = new Vertex<>("f");
+    Vertex<String> ghij   = new Vertex<>("ghij");
+    Vertex<String> klmno  = new Vertex<>("klmno");
+    Vertex<String> pqr    = new Vertex<>("pqr");
+    Vertex<String> st     = new Vertex<>("st");
+
+    ab.neighbors   = new ArrayList<>(Arrays.asList(cde, f, ghij));
+    cde.neighbors  = new ArrayList<>(Arrays.asList(klmno, f));
+    f.neighbors    = new ArrayList<>(Arrays.asList(pqr));
+    ghij.neighbors = new ArrayList<>(Arrays.asList(cde, st));
+    st.neighbors   = new ArrayList<>(Arrays.asList(ab)); // cycle
+    // klmno and pqr are leaves
+
+    String output = captureOutput(() -> Build.printShortWords(ab, 4));
+    Set<String> actual = new HashSet<>(Arrays.asList(output.split("\\s+")));
+    // Words with length < 4 reachable: "ab"(2), "cde"(3), "f"(1), "pqr"(3), "st"(2)
+    Set<String> expected = new HashSet<>(Arrays.asList("ab", "cde", "f", "pqr", "st"));
+    assertEquals(expected, actual);
+  }
+
   // ====================================================
   // Tests for longestWord(Vertex<String>)
   // ====================================================
@@ -335,6 +365,26 @@ public class BuildTest {
     two.neighbors = new ArrayList<>(Arrays.asList(three));
     three.neighbors = new ArrayList<>(Arrays.asList(one));
     assertEquals("three", Build.longestWord(one));
+  }
+
+  @Test
+  public void testLongestWord_ComplexGraph() {
+    Vertex<String> ab     = new Vertex<>("ab");
+    Vertex<String> cde    = new Vertex<>("cde");
+    Vertex<String> f      = new Vertex<>("f");
+    Vertex<String> ghij   = new Vertex<>("ghij");
+    Vertex<String> klmno  = new Vertex<>("klmno");
+    Vertex<String> pqr    = new Vertex<>("pqr");
+    Vertex<String> st     = new Vertex<>("st");
+
+    ab.neighbors   = new ArrayList<>(Arrays.asList(cde, f, ghij));
+    cde.neighbors  = new ArrayList<>(Arrays.asList(klmno, f));
+    f.neighbors    = new ArrayList<>(Arrays.asList(pqr));
+    ghij.neighbors = new ArrayList<>(Arrays.asList(cde, st));
+    st.neighbors   = new ArrayList<>(Arrays.asList(ab)); // cycle
+
+    // The longest reachable word is "klmno" (5 chars)
+    assertEquals("klmno", Build.longestWord(ab));
   }
 
   // ====================================================
@@ -382,6 +432,31 @@ public class BuildTest {
     assertEquals(expected, actual);
   }
 
+   @Test
+  public void testPrintSelfLoopers_DeepAndForked() {
+    // A -> B, C
+    // B -> D
+    // C -> E
+    // D -> D (self-loop)
+    // E -> E (self-loop)
+    Vertex<String> A = new Vertex<>("A");
+    Vertex<String> B = new Vertex<>("B");
+    Vertex<String> C = new Vertex<>("C");
+    Vertex<String> D = new Vertex<>("D");
+    Vertex<String> E = new Vertex<>("E");
+
+    A.neighbors = new ArrayList<>(Arrays.asList(B, C));
+    B.neighbors = new ArrayList<>(Arrays.asList(D));
+    C.neighbors = new ArrayList<>(Arrays.asList(E));
+    D.neighbors = new ArrayList<>(Arrays.asList(D)); // self-loop deep in branch
+    E.neighbors = new ArrayList<>(Arrays.asList(E)); // another self-loop
+
+    String output = captureOutput(() -> Build.printSelfLoopers(A));
+    Set<String> actual = new HashSet<>(Arrays.asList(output.split("\\s+")));
+    Set<String> expected = new HashSet<>(Arrays.asList("D", "E"));
+    assertEquals(expected, actual);
+  }
+
   // ====================================================
   // Tests for canReach(Airport, Airport)
   // ====================================================
@@ -420,6 +495,13 @@ public class BuildTest {
     // PHX -> SEA -> DEN -> MIA -> SEA forms a cycle.
     // PHX should be able to reach DEN.
     assertTrue(Build.canReach(data.phx, data.den));
+  }
+
+  @Test
+  public void testCanReach_ReachViaDifferentPaths() {
+    AirportData data = buildAirportData();
+    // PHX -> SEA -> DEN -> MIA
+    assertTrue(Build.canReach(data.phx, data.mia));
   }
 
   // ====================================================
@@ -487,6 +569,44 @@ public class BuildTest {
     // Starting from "D" (not in graph), expect all nodes to be unreachable.
     Set<String> unreachable = Build.unreachable(graph, "D");
     Set<String> expected = new HashSet<>(Arrays.asList("A", "B", "C"));
+    assertEquals(expected, unreachable);
+  }
+
+   @Test
+  public void testUnreachable_ForkedStringGraph_AllReachable() {
+    // A -> B, C
+    // B -> D
+    // C -> D, E
+    // D -> (leaf)
+    // E -> F
+    // F -> (leaf)
+    Map<String, List<String>> graph = new HashMap<>();
+    graph.put("A", Arrays.asList("B", "C"));
+    graph.put("B", Arrays.asList("D"));
+    graph.put("C", Arrays.asList("D", "E"));
+    graph.put("D", new ArrayList<>());
+    graph.put("E", Arrays.asList("F"));
+    graph.put("F", new ArrayList<>());
+
+    // From A, all nodes (A,B,C,D,E,F) are reachable
+    Set<String> unreachable = Build.unreachable(graph, "A");
+    assertTrue(unreachable.isEmpty());
+  }
+
+  @Test
+  public void testUnreachable_ForkedStringGraph_PartialUnreachable() {
+    // Same graph as above
+    Map<String, List<String>> graph = new HashMap<>();
+    graph.put("A", Arrays.asList("B", "C"));
+    graph.put("B", Arrays.asList("D"));
+    graph.put("C", Arrays.asList("D", "E"));
+    graph.put("D", new ArrayList<>());
+    graph.put("E", Arrays.asList("F"));
+    graph.put("F", new ArrayList<>());
+
+    // From B, reachable are {B, D}; unreachable {A, C, E, F}
+    Set<String> unreachable = Build.unreachable(graph, "B");
+    Set<String> expected = new HashSet<>(Arrays.asList("A", "C", "E", "F"));
     assertEquals(expected, unreachable);
   }
 }
