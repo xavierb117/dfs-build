@@ -62,6 +62,18 @@ public class Build {
    * @param <T> the type of values stored in the vertices
    */
   public static <T> void printSelfLoopers(Vertex<T> vertex) {
+    Set<Vertex<T>> visited = new HashSet<>();
+    printSelfLoopersHelper(vertex, visited);
+  }
+
+  public static <T> void printSelfLoopersHelper(Vertex<T> vertex, Set<Vertex<T>> visited) {
+    if (vertex == null || visited.contains(vertex)) return;
+
+    visited.add(vertex);
+    for (Vertex<T> neighbor : vertex.neighbors) {
+      if (neighbor == vertex) System.out.println(vertex.data);
+      printSelfLoopersHelper(neighbor, visited);
+    }
   }
 
   /**
